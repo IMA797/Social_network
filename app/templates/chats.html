@@ -1,0 +1,16 @@
+{% extends "base.html" %} {% block content %}
+<h1>Мои чаты</h1>
+
+<a href="{{ url_for('search_users') }}">Найти пользователя</a>
+<hr> {% if dialogs %} {% for dialog in dialogs %} {# Определяем собеседника #} {% if dialog.user1_id == current_user.id %} {% set other_user = dialog.user2 %} {% else %} {% set other_user = dialog.user1 %} {% endif %}
+
+<div style="border:1px solid #ccc; margin:10px; padding:10px;">
+    <a href="{{ url_for('chat', user_id=other_user.id) }}">
+        <strong>{{ other_user.username }}</strong>
+        <br>
+        <small>Обновлён: {{ dialog.updated_at.strftime('%H:%M %d.%m.%Y') }}</small>
+    </a>
+</div>
+{% endfor %} {% else %}
+<p>У вас пока нет диалогов</p>
+{% endif %} {% endblock %}

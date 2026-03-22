@@ -1,0 +1,16 @@
+{% extends "base.html" %} {% block content %}
+<h1>Поиск пользователей</h1>
+
+<form method="POST">
+    <input type="text" name="search" placeholder="Введите имя пользователя">
+    <button type="submit">Найти</button>
+</form>
+
+{% if users %}
+<h2>Результаты:</h2>
+{% for user in users %}
+<div style="margin:10px; padding:10px; border:1px solid #ccc;">
+    <strong>{{ user.username }}</strong>
+    <a href="{{ url_for('chat', user_id=user.id) }}">Написать</a>
+</div>
+{% endfor %} {% endif %} {% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %} {% block content %}
+<h1>Чат с {{ other_user.username }}</h1>
+
+<div style="height:400px; overflow-y:scroll; border:1px solid #ccc; padding:10px;">
+    {% for msg in messages %}
+    <div style="margin:10px; text-align:{% if msg.sender_id == current_user.id %}right{% else %}left{% endif %};">
+        <div style="display:inline-block; background:{% if msg.sender_id == current_user.id %}#007bff{% else %}#e9ecef{% endif %}; 
+                        color:{% if msg.sender_id == current_user.id %}white{% else %}black{% endif %}; 
+                        padding:8px; border-radius:10px;">
+            <strong>{{ msg.sender.username }}:</strong>
+            <p>{{ msg.content }}</p>
+            <small>{{ msg.timestamp.strftime('%H:%M') }}</small>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<form method="POST" style="margin-top:20px;">
+    <textarea name="message" rows="3" style="width:100%;" placeholder="Введите сообщение..."></textarea>
+    <button type="submit">Отправить</button>
+</form>
+
+<a href="{{ url_for('chats') }}">← Назад к чатам</a> {% endblock %}
