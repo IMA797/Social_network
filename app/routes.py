@@ -27,16 +27,22 @@ def index():
   ]
   return render_template('index.html', title='Home', posts=posts)
 
+#Функция просмотра (принимает запросы GET и POST)
 @app.route('/login', methods=['GET', 'POST'])
 def login():
   if current_user.is_authenticated:
     return redirect(url_for('index'))
+  #Создаем экземпляр объекта
   form = LoginForm()
+  #При GET запросе данное условие опускается, при POST выполняется
+  #А также проверка, то что в файле forms.py в аргументе validators
   if form.validate_on_submit():
     user = db.session.scalar(
       sa.select(User).where(User.username == form.username.data))
     if user is None or not user.check_password(form.password.data):
+      #Вывод ошибки пользователю
       flash('Invalid username or password')
+      #Переход на другую страницу 
       return redirect(url_for('login'))
     login_user(user, remember=form.remember_me.data)
     next_page = request.args.get('next')

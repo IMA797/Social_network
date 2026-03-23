@@ -5,7 +5,9 @@ import sqlalchemy as sa
 from app import db
 from app.models import User
 
+#Форма входа в систему
 class LoginForm(FlaskForm):
+  #Первый аргумент - описание, второй - привязка проверки поля (не отправлено пустым)
   username = StringField('Username', validators=[DataRequired()])
   password = PasswordField('Password', validators=[DataRequired()])
   remember_me = BooleanField('Remember Me')
