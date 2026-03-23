@@ -1,23 +1,73 @@
 {% extends "base.html" %} {% block content %}
 <h1>Чат с {{ other_user.username }}</h1>
 
-<div style="height:400px; overflow-y:scroll; border:1px solid #ccc; padding:10px;">
+<div id="messages" style="height:400px; overflow-y:scroll; border:1px solid #ccc; padding:10px;">
     {% for msg in messages %}
-    <div style="margin:10px; text-align:{% if msg.sender_id == current_user.id %}right{% else %}left{% endif %};">
-        <div style="display:inline-block; background:{% if msg.sender_id == current_user.id %}#007bff{% else %}#e9ecef{% endif %}; 
-                        color:{% if msg.sender_id == current_user.id %}white{% else %}black{% endif %}; 
-                        padding:8px; border-radius:10px;">
-            <strong>{{ msg.sender.username }}:</strong>
-            <p>{{ msg.content }}</p>
-            <small>{{ msg.timestamp.strftime('%H:%M') }}</small>
-        </div>
-    </div>
+    <div><strong>{{ msg.sender.username }}:</strong> {{ msg.content }}</div>
     {% endfor %}
 </div>
 
-<form method="POST" style="margin-top:20px;">
-    <textarea name="message" rows="3" style="width:100%;" placeholder="Введите сообщение..."></textarea>
-    <button type="submit">Отправить</button>
-</form>
+<input type="text" id="msg" style="width:80%; padding:5px;">
+<button id="btn" style="padding:5px 10px;">Отправить</button>
 
-<a href="{{ url_for('chats') }}">← Назад к чатам</a> {% endblock %}
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<script>
+    const dialogId = Number("{{ dialog.id }}");
+    const currentUserId = Number("{{ current_user.id }}");
+
+    console.log("dialogId:", dialogId);
+    console.log("currentUserId:", currentUserId);
+
+    const socket = io();
+
+    socket.on('connect', function() {
+        console.log("Socket connected");
+        socket.emit('join', {
+            dialog_id: dialogId
+        });
+    });
+
+    socket.on('new_message', function(data) {
+        console.log("New message:", data);
+        const messagesDiv = document.getElementById('messages');
+        const newMsg = document.createElement('div');
+        newMsg.innerHTML = '<strong>' + escapeHtml(data.username) + ':</strong> ' + escapeHtml(data.text);
+        messagesDiv.appendChild(newMsg);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    });
+
+    function sendMessage() {
+        const input = document.getElementById('msg');
+        const text = input.value.trim();
+
+        if (text === '') return;
+
+        console.log("Sending:", text);
+
+        socket.emit('send_message', {
+            text: text,
+            dialog_id: dialogId,
+            user_id: currentUserId
+        });
+
+        input.value = '';
+    }
+
+    document.getElementById('btn').onclick = sendMessage;
+
+    document.getElementById('msg').onkeypress = function(e) {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
+    };
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.appendChild(document.createTextNode(text));
+        return div.innerHTML;
+    }
+
+    const messagesDiv = document.getElementById('messages');
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+</script>
+{% endblock %}

@@ -1,5 +1,5 @@
 from flask import render_template, flash, redirect, url_for, request
-from app import app
+from app import app, socketio
 from app.forms import LoginForm, RegistrationForm
 from flask_login import current_user, login_user, logout_user, login_required
 import sqlalchemy as sa
@@ -7,6 +7,7 @@ from app import db
 from app.models import User, Dialog, Message
 from urllib.parse import urlsplit
 from datetime import datetime
+from flask_socketio import emit, join_room, disconnect
 
 
 @app.route('/')
@@ -16,11 +17,11 @@ def index():
   user = {'username': 'Magomed'}
   posts = [
     {
-      'author': {'username': 'John'},
+      'author': {'username': 'Roman'},
       'body': 'Beautiful day in Portland!'
     },
     {
-      'author': {'username': 'Susan'},
+      'author': {'username': 'Kalivan'},
       'body': 'The Avengers movie was so cool!'
     }
   ]
@@ -81,16 +82,32 @@ def get_or_create_dialog(user1_id, user2_id):
 @app.route('/chats')
 @login_required
 def chats():
-  #Ищем в бд диалоги 
+  # Находим диалоги
   dialogs_as_user1 = Dialog.query.filter_by(user1_id=current_user.id).all()
   dialogs_as_user2 = Dialog.query.filter_by(user2_id=current_user.id).all()
   
-  #Объединяем диалоги в один
+  # Объединяем все диалоги
   all_dialogs = dialogs_as_user1 + dialogs_as_user2
-  #Сортируем диалоги от новых сообщений к старым 
-  all_dialogs.sort(key=lambda x: x.updated_at, reverse=True)
   
-  return render_template('chats.html', dialogs=all_dialogs)
+  # Для каждого диалога получаем последнее сообщение и собеседника
+  dialog_data = []
+  for dialog in all_dialogs:
+    # Определяем собеседника
+    if dialog.user1_id == current_user.id:
+      other_user = dialog.user2
+    else:
+      other_user = dialog.user1
+    
+    # Получаем последнее сообщение
+    last_message = Message.query.filter_by(dialog_id=dialog.id).order_by(Message.timestamp.desc()).first()
+    
+    dialog_data.append({'dialog': dialog,'other_user': other_user,'last_message': last_message})
+  
+  # Сортируем по времени последнего сообщения
+  dialog_data.sort(key=lambda x: x['last_message'].timestamp if x['last_message'] else datetime.min, reverse=True)
+  
+  return render_template('chats.html', dialog_data=dialog_data)
+
 
 @app.route('/chat/<int:user_id>', methods=['GET', 'POST'])
 @login_required
@@ -136,3 +153,34 @@ def search_users():
     if search:
       users = User.query.filter(User.username.contains(search), User.id != current_user.id).limit(10).all()
   return render_template('search_users.html', users=users)
+
+@socketio.on('join')
+def handle_join(data):
+  if not current_user.is_authenticated:
+    return
+  
+  dialog = Dialog.query.get(data['dialog_id'])
+  if dialog and (dialog.user1_id == current_user.id or dialog.user2_id == current_user.id):
+    room = f'dialog_{data["dialog_id"]}'
+    join_room(room)
+  else:
+    disconnect()
+
+@socketio.on('send_message')
+def handle_send_message(data):
+  msg = Message(content=data['text'], dialog_id=data['dialog_id'],sender_id=data['user_id'])
+  db.session.add(msg)
+  
+  dialog = Dialog.query.get(data['dialog_id'])
+  if dialog:
+    dialog.updated_at = datetime.utcnow()
+  
+  db.session.commit()
+  
+  room = f'dialog_{data["dialog_id"]}'
+  emit('new_message', {
+      'text': data['text'],
+      'user_id': data['user_id'],
+      'username': current_user.username,
+      'time': datetime.now().strftime('%H:%M')
+  }, room=room)
