@@ -20,12 +20,12 @@ class RegistrationForm(FlaskForm):
   password = PasswordField('Password', validators=[DataRequired()])
   password2 = PasswordField('Repeat Password', validators=[DataRequired(), EqualTo('password')])
   submit = SubmitField('Register')
-
+  #Проверка, свободно ли имя 
   def validate_username(self, username):
     user = db.session.scalar(sa.select(User).where(User.username == username.data))
     if user is not None:
       raise ValidationError('Please use a different username.')
-
+  #Проверка, свободен ли email
   def validate_email(self, email):
     user = db.session.scalar(sa.select(User).where(User.email == email.data))
     if user is not None:

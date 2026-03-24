@@ -12,12 +12,14 @@
 
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
+    //Получение id диалога и id пользователя
     const dialogId = Number("{{ dialog.id }}");
     const currentUserId = Number("{{ current_user.id }}");
 
     console.log("dialogId:", dialogId);
     console.log("currentUserId:", currentUserId);
 
+    //Подключение к WebSocket 
     const socket = io();
 
     socket.on('connect', function() {
@@ -29,21 +31,26 @@
 
     socket.on('new_message', function(data) {
         console.log("New message:", data);
+        //Хранилище всех сообщений 
         const messagesDiv = document.getElementById('messages');
         const newMsg = document.createElement('div');
+        //escapeHtml(data.username) - защита имени пользователя
         newMsg.innerHTML = '<strong>' + escapeHtml(data.username) + ':</strong> ' + escapeHtml(data.text);
+        //Добавление нового сообщения в хранилище
         messagesDiv.appendChild(newMsg);
+        //Прокрутка чата вниз, чтоб было видно последнее сообщение
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     });
-
+    //Отправка сообщений на сервер
     function sendMessage() {
+        //Получаем поле ввода и достаем оттуда сообщение
         const input = document.getElementById('msg');
         const text = input.value.trim();
-
+        //Сравнение без приведения типов, == - сравнение с приведением типов
         if (text === '') return;
 
         console.log("Sending:", text);
-
+        //Отправка сообщений на сервер
         socket.emit('send_message', {
             text: text,
             dialog_id: dialogId,
@@ -52,21 +59,25 @@
 
         input.value = '';
     }
-
+    //Обработка нажатия кнопки
     document.getElementById('btn').onclick = sendMessage;
-
+    //Обработка нажатия клавиш в поле ввода
+    //function(e) - Функция, которая срабатывает при нажатии любой клавиш
     document.getElementById('msg').onkeypress = function(e) {
         if (e.key === 'Enter') {
             sendMessage();
         }
     };
-
+    //Защита, чтоб не вставить вредоносный код в сообщение
     function escapeHtml(text) {
+        //Временное хранилище текста
         const div = document.createElement('div');
+        //Вставка происходит как обычный текст
         div.appendChild(document.createTextNode(text));
         return div.innerHTML;
     }
-
+    //Находим хранилище сообщений и прокручиваем чат вниз
+    //Нужно когда есть старые сообщения но нет новых 
     const messagesDiv = document.getElementById('messages');
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 </script>

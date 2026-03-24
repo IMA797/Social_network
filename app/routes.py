@@ -45,6 +45,7 @@ def login():
       #Переход на другую страницу 
       return redirect(url_for('login'))
     login_user(user, remember=form.remember_me.data)
+    #Получение параметра next из url
     next_page = request.args.get('next')
     if not next_page or urlsplit(next_page).netloc != '':
       next_page = url_for('index')
@@ -164,9 +165,11 @@ def search_users():
 def handle_join(data):
   if not current_user.is_authenticated:
     return
-  
+  #Поиск диалога
   dialog = Dialog.query.get(data['dialog_id'])
+  #Проверка на диалог
   if dialog and (dialog.user1_id == current_user.id or dialog.user2_id == current_user.id):
+    #Создаем комнату и заходим в нее
     room = f'dialog_{data["dialog_id"]}'
     join_room(room)
   else:
@@ -174,16 +177,20 @@ def handle_join(data):
 
 @socketio.on('send_message')
 def handle_send_message(data):
+  #Сохраняем сообщения в бд
   msg = Message(content=data['text'], dialog_id=data['dialog_id'],sender_id=data['user_id'])
   db.session.add(msg)
   
   dialog = Dialog.query.get(data['dialog_id'])
+  #Если диалог существует, обновляем время 
   if dialog:
     dialog.updated_at = datetime.utcnow()
   
   db.session.commit()
   
+
   room = f'dialog_{data["dialog_id"]}'
+  #Отправялем данные всем в комнате
   emit('new_message', {
       'text': data['text'],
       'user_id': data['user_id'],

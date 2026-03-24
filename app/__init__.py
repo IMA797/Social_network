@@ -8,7 +8,10 @@ from flask_socketio import SocketIO
 app = Flask(__name__)
 app.config.from_object(Config)
 
+#Flask-Login подключается к приложению и начинает отследивать пользователя,
+#Предоставлять переменную current_user
 login = LoginManager(app)
+#Если незарегистрированный пользователь зайдет на сайт, его перенаправит на login
 login.login_view = 'login'
 
 db = SQLAlchemy(app)
