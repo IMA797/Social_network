@@ -1,7 +1,51 @@
 {% extends "base.html" %} {% block content %}
-<h1>Hi, {{ current_user.username }}!</h1>
-{% for post in posts %}
-<div>
-    <p>{{ post.author.username }} says: <b>{{ post.body }}</b></p>
+<div style="max-width: 600px; margin: 0 auto;">
+    <h1>Профиль</h1>
+    <hr>
+
+    <div style="display: flex; align-items: center; gap: 20px;">
+        <div style="width: 80px; height: 80px; background: #007bff; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 32px;">
+            {{ current_user.username[0].upper() }}
+        </div>
+        <div>
+            <h2 style="margin: 0;">{{ current_user.username }}</h2>
+            <p style="margin: 5px 0 0; color: gray;">{{ current_user.email }}</p>
+        </div>
+    </div>
+
+    <hr>
+
+    <h3>О себе</h3>
+    <div style="background: #f5f5f5; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+        {% if current_user.about_me %}
+        <p style="margin: 0; white-space: pre-wrap;">{{ current_user.about_me }}</p>
+        {% else %}
+        <p style="margin: 0; color: gray;">Пока ничего не рассказано о себе</p>
+        {% endif %}
+    </div>
+
+    <button onclick="showEditForm()" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
+        ✏️ Редактировать
+    </button>
+
+    <div id="editForm" style="display: none; margin-top: 20px;">
+        <form method="POST" action="{{ url_for('update_profile') }}">
+            <label for="about_me">О себе:</label>
+            <textarea id="about_me" name="about_me" rows="4" style="width: 100%; padding: 8px; margin: 10px 0; border-radius: 5px; border: 1px solid #ccc;">{{ current_user.about_me or '' }}</textarea>
+            <br>
+            <button type="submit" style="padding: 8px 16px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer;">Сохранить</button>
+            <button type="button" onclick="hideEditForm()" style="padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer;">Отмена</button>
+        </form>
+    </div>
 </div>
-{% endfor %} {% endblock %}
+
+<script>
+    function showEditForm() {
+        document.getElementById('editForm').style.display = 'block';
+    }
+
+    function hideEditForm() {
+        document.getElementById('editForm').style.display = 'none';
+    }
+</script>
+{% endblock %}

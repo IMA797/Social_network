@@ -14,18 +14,16 @@ import json
 @app.route('/index')
 @login_required
 def index():
-  user = {'username': 'Magomed'}
-  posts = [
-    {
-      'author': {'username': 'Roman'},
-      'body': 'Beautiful day in Portland!'
-    },
-    {
-      'author': {'username': 'Kalivan'},
-      'body': 'The Avengers movie was so cool!'
-    }
-  ]
-  return render_template('index.html', title='Home', posts=posts)
+  return render_template('index.html', title='Profile')
+
+@app.route('/update_profile', methods=['POST'])
+@login_required
+def update_profile():
+    about_me = request.form.get('about_me', '').strip()
+    current_user.about_me = about_me
+    db.session.commit()
+    flash('Профиль обновлён!')
+    return redirect(url_for('index'))
 
 #Функция просмотра (принимает запросы GET и POST)
 @app.route('/login', methods=['GET', 'POST'])

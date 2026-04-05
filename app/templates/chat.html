@@ -1,78 +1,84 @@
 {% extends "base.html" %} {% block content %}
-<h1>Чат с {{ other_user.username }}</h1>
+<div class="chat-header">
+    <h2>Чат с {{ other_user.username }}</h2>
+</div>
 
-<div id="messages" style="height:400px; overflow-y:auto; border:1px solid #ccc; padding:10px;">
-    {% for msg in messages %}
-    <div class="message-item" data-encrypted="{{ msg.content }}" data-username="{{ msg.sender.username }}">
-        <strong>{{ msg.sender.username }}:</strong>
-        <span class="message-text">{{ msg.content }}</span>
+<div id="messages" class="messages-area">
+    {% set ns = namespace(last_date=None) %} {% for msg in messages %} {% set msg_date = msg.timestamp.strftime('%d.%m.%Y') %} {% if ns.last_date != msg_date %}
+    <div class="date-divider">
+        <span>{{ msg_date }}</span>
+    </div>
+    {% set ns.last_date = msg_date %} {% endif %}
+
+    <div class="message {% if msg.sender_id == current_user.id %}sent{% else %}received{% endif %}" data-encrypted="{{ msg.content }}" data-username="{{ msg.sender.username }}">
+        <div class="bubble">
+            <div class="message-text">
+                {% if msg.sender_id != current_user.id %}
+                <strong>{{ msg.sender.username }}:</strong><br> {% endif %}
+                <span class="message-content">🔒 Загрузка...</span>
+            </div>
+            <div class="message-time">{{ msg.timestamp.strftime('%H:%M') }}</div>
+        </div>
     </div>
     {% endfor %}
 </div>
 
-<input id="msg" type="text" style="width:80%; padding:5px; margin-top:10px;" />
-<button id="btn" style="padding:5px 10px;">Отправить</button>
+<form class="message-form" id="message-form">
+    <input type="text" class="message-input" id="msg" placeholder="Сообщение...">
+    <button type="submit" class="send-btn">Отправить</button>
+</form>
 
 <div id="chat-data" data-dialog-id="{{ dialog.id }}" data-user-id="{{ current_user.id }}" data-other-user-id="{{ other_user.id }}" style="display:none;"></div>
 
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
-    //Находим блок div и сохраняем его в переменную data
+    const socket = io();
     const chatData = document.getElementById('chat-data');
-    //Достаем id диалога
-    //pardeInt - превращает строку в число
     const dialogId = parseInt(chatData.getAttribute('data-dialog-id'));
-    //Достаем id текущего пользователя и его собеседника
     const currentUserId = parseInt(chatData.getAttribute('data-user-id'));
     const otherUserId = parseInt(chatData.getAttribute('data-other-user-id'));
-
     let sharedAesKey = null;
 
-    //Прокрутка страницы вниз, чтоб новые сообщения были видны и пользователь сам не прокручивал страницу
     function scrollToBottom() {
         const div = document.getElementById('messages');
-        //Устанавливаем значение текущей прокрутки на значение высоты, сколько занимают все сообщения
         div.scrollTop = div.scrollHeight;
     }
 
-    //Функция расшифровки сообщения
     async function decryptAllMessages() {
-
         if (!sharedAesKey) return;
-        //Находим все блоки с сообщенинями 
-        const items = document.querySelectorAll('.message-item');
+        const items = document.querySelectorAll('.message');
         for (const item of items) {
-            //Достаем зашифрованные сообщения
             const encryptedStr = item.getAttribute('data-encrypted');
             if (!encryptedStr) continue;
             try {
-                //Преобразование json в объект
                 const encrypted = JSON.parse(encryptedStr);
                 if (encrypted.ciphertext && encrypted.iv) {
-                    //decrypted хранить расшифрованное сообщение
                     const decrypted = await decryptMessage(sharedAesKey, encrypted);
-                    const span = item.querySelector('.message-text');
-                    //Вставка зашифрованного сообщения 
+                    const span = item.querySelector('.message-content');
                     if (span) span.innerText = decrypted;
                     item.removeAttribute('data-encrypted');
+                } else {
+                    const span = item.querySelector('.message-content');
+                    if (span) span.innerText = encryptedStr;
+                    item.removeAttribute('data-encrypted');
                 }
-            } catch (e) {}
+            } catch (e) {
+                const span = item.querySelector('.message-content');
+                if (span) span.innerText = encryptedStr;
+                item.removeAttribute('data-encrypted');
+            }
         }
         scrollToBottom();
     }
-    //Вычисление общего секрета
+
     async function initEncryption() {
-        //Запрос публичного ключа собеседника
         const response = await fetch('/get_public_key/' + otherUserId);
         const data = await response.json();
         if (data.public_key) {
-            //Берем свой приватный ключ
             const privateKeyBase64 = localStorage.getItem('privateKey');
             if (!privateKeyBase64) return;
-            //Вызов функции обработки ключей
             const myPrivate = await importPrivateKey(privateKeyBase64);
             const peerPublic = await importPublicKey(data.public_key);
-            //Вычисление общего ключа по Диффи-Хеллману
             sharedAesKey = await deriveAesKey(myPrivate, peerPublic);
             console.log('Encryption ready');
             await decryptAllMessages();
@@ -80,9 +86,6 @@
             console.log('No public key for user', otherUserId);
         }
     }
-
-
-    const socket = io();
 
     socket.on('connect', function() {
         console.log('Socket connected');
@@ -92,20 +95,31 @@
         initEncryption();
     });
 
-    //Получаем новое сообщение, расшифровываем его и отправляем на страницу
     socket.on('new_message', async function(data) {
-        //Находим контейнер, куда будут отправляться сообщения
         const container = document.getElementById('messages');
+
+        const now = new Date();
+        const today = now.getDate().toString().padStart(2, '0') + '.' +
+            (now.getMonth() + 1).toString().padStart(2, '0') + '.' +
+            now.getFullYear();
+
+        const lastDivider = container.querySelector('.date-divider:last-child');
+        const lastDate = lastDivider ? lastDivider.innerText : null;
+
+        if (lastDate !== today) {
+            const divider = document.createElement('div');
+            divider.className = 'date-divider';
+            divider.innerHTML = '<span>' + today + '</span>';
+            container.appendChild(divider);
+        }
+
         const div = document.createElement('div');
-        //Добавляем класс для стилей и для JS
-        div.className = 'message-item';
+        div.className = 'message ' + (data.user_id == currentUserId ? 'sent' : 'received');
         let messageText = '';
-        //Имя отправителя
         let username = data.username || 'Unknown';
-        //Если пришло зашифрованное сообщение и имеется ключ
+
         if (data.encrypted && sharedAesKey) {
             try {
-                //Расшифрованное сообщение
                 messageText = await decryptMessage(sharedAesKey, data.encrypted);
             } catch (e) {
                 console.error('Decrypt error:', e);
@@ -114,17 +128,22 @@
         } else if (data.text) {
             messageText = data.text;
         }
-        div.innerHTML = '<strong>' + escapeHtml(username) + ':</strong> <span>' + escapeHtml(messageText) + '</span>';
+
+        div.innerHTML = `
+            <div class="bubble">
+                <div class="message-text">
+                    ${data.user_id != currentUserId ? '<strong>' + escapeHtml(username) + ':</strong><br>' : ''}
+                    <span class="message-content">${escapeHtml(messageText)}</span>
+                </div>
+                <div class="message-time">${now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')}</div>
+            </div>
+        `;
         container.appendChild(div);
         scrollToBottom();
     });
 
-    //Отправка зашифрованного сообщения (если есть ключ) на сервер
     async function sendMessage() {
-        //Находим поле ввода
         const input = document.getElementById('msg');
-        //Введенное сообщение пользователя
-        //.tim удаляет лишние пробелы в начале и в конце строки
         const text = input.value.trim();
         if (text === '') return;
         if (sharedAesKey) {
@@ -144,19 +163,14 @@
         input.value = '';
     }
 
-    //Защита от xss-атак
     function escapeHtml(text) {
         if (!text) return '';
-        //Создаем div тег в памяти
         const div = document.createElement('div');
-        //Добавляем внутрь тега div текст как обычный текст
         div.appendChild(document.createTextNode(text));
         return div.innerHTML;
     }
 
-    //Обработка кнопки "Отправить"
-    document.getElementById('btn').onclick = sendMessage;
-    //Обработка отправки сообщения по нажатию кнопки "Enter"
+    document.querySelector('.send-btn').onclick = sendMessage;
     document.getElementById('msg').onkeypress = function(e) {
         if (e.key === 'Enter') sendMessage();
     };

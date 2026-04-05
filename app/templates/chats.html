@@ -1,23 +1,32 @@
 {% extends "base.html" %} {% block content %}
 <h1>Мои чаты</h1>
-
 <a href="{{ url_for('search_users') }}">Найти пользователя</a>
-<hr> {% if dialog_data %} {% for item in dialog_data %}
-<div class="chat-item" data-other-user-id="{{ item.other_user.id }}" data-last-message="{{ item.last_message.content if item.last_message else '' }}" data-timestamp="{{ item.last_message.timestamp.strftime('%H:%M %d.%m.%Y') if item.last_message else '' }}">
+<hr>
 
-    <a href="{{ url_for('chat', user_id=item.other_user.id) }}">
-        <strong>{{ item.other_user.username }}</strong>
-        <br> {% if item.last_message %}
-        <small>{{ item.last_message.timestamp.strftime('%H:%M %d.%m.%Y') }}</small>
-        <p class="last-message-text"> Загрузка...</p>
-        {% else %}
-        <p><em>Нет сообщений</em></p>
-        {% endif %}
-    </a>
+<div class="chat-list">
+    {% if dialog_data %} {% for item in dialog_data %}
+    <div class="chat-item" data-other-user-id="{{ item.other_user.id }}">
+        <a href="{{ url_for('chat', user_id=item.other_user.id) }}">
+            <div class="avatar">
+                {{ item.other_user.username[0]|upper }}
+            </div>
+            <div class="chat-info">
+                <div class="chat-name">
+                    {{ item.other_user.username }} {% if item.last_message %}
+                    <span class="message-time">{{ item.last_message.timestamp.strftime('%d.%m.%Y') }}</span> {% endif %}
+                </div>
+                <div class="last-message">
+                    {% if item.last_message %}
+                    <span class="last-message-text">От разработчика: Ух хитрый какой - зайди, чтоб увидеть сообщение </span> {% else %}
+                    <span>Нет сообщений</span> {% endif %}
+                </div>
+            </div>
+        </a>
+    </div>
+    {% endfor %} {% else %}
+    <p>У вас пока нет диалогов</p>
+    {% endif %}
 </div>
-{% endfor %} {% else %}
-<p>У вас пока нет диалогов</p>
-{% endif %}
 
 <script src="{{ url_for('static', filename='js/crypto.js') }}"></script>
 <script>

@@ -13,6 +13,7 @@ class User(UserMixin, db.Model):
   password_hash: so.Mapped[Optional[str]] = so.mapped_column(sa.String(256))
   
   public_key: so.Mapped[Optional[str]] = so.mapped_column(sa.Text, nullable=True)
+  about_me: so.Mapped[Optional[str]] = so.mapped_column(sa.String(200), nullable=True)
 
   def __repr__(self):
     return '<User {}>'.format(self.username)
