@@ -7,6 +7,53 @@
     <title>social network</title>
     {% endif %}
 </head>
+<script src="{{ url_for('static', filename='js/crypto.js') }}"></script>
+<script>
+    //Функция обработки ключей
+    async function initCrypto() {
+        //localStorage - некое хранилище, в котором постоянно хранятся ключи: публичные и приватные
+        let privateKey = localStorage.getItem('privateKey');
+        let publicKey = localStorage.getItem('publicKey');
+
+        if (!privateKey) {
+            console.log("Генерация новых ключей...");
+            const keys = await generateKeyPair();
+            //Сохраняем ключи в хранилище
+            localStorage.setItem('privateKey', keys.privateKey);
+            localStorage.setItem('publicKey', keys.publicKey);
+            //Сохраняем публичный ключ
+            publicKey = keys.publicKey;
+
+            //Отправляем публичный ключ на сервер
+            await fetch('/save_public_key', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                //Отправляем публичный ключ в виде json 
+                body: JSON.stringify({
+                    public_key: publicKey
+                })
+            });
+            console.log("Ключи сгенерированы и сохранены");
+        } else {
+            console.log("Ключи уже есть в localStorage");
+
+            // Отправляем публичный ключ на сервер (на случай, если его там нет)
+            await fetch('/save_public_key', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    public_key: publicKey
+                })
+            });
+        }
+    }
+
+    initCrypto();
+</script>
 
 <body>
     <div>

@@ -12,6 +12,8 @@ class User(UserMixin, db.Model):
   email: so.Mapped[str] = so.mapped_column(sa.String(120), index=True, unique=True)
   password_hash: so.Mapped[Optional[str]] = so.mapped_column(sa.String(256))
   
+  public_key: so.Mapped[Optional[str]] = so.mapped_column(sa.Text, nullable=True)
+
   def __repr__(self):
     return '<User {}>'.format(self.username)
   
@@ -20,6 +22,7 @@ class User(UserMixin, db.Model):
 
   def check_password(self, password):
     return check_password_hash(self.password_hash, password)
+  
   dialogs_as_user1: so.Mapped[list['Dialog']] = so.relationship(
         foreign_keys='Dialog.user1_id', 
         back_populates='user1'

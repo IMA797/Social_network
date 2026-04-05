@@ -1,4 +1,4 @@
-from flask import render_template, flash, redirect, url_for, request
+from flask import render_template, flash, redirect, url_for, request, jsonify
 from app import app, socketio
 from app.forms import LoginForm, RegistrationForm
 from flask_login import current_user, login_user, logout_user, login_required
@@ -8,7 +8,7 @@ from app.models import User, Dialog, Message
 from urllib.parse import urlsplit
 from datetime import datetime
 from flask_socketio import emit, join_room, disconnect
-
+import json
 
 @app.route('/')
 @app.route('/index')
@@ -176,24 +176,64 @@ def handle_join(data):
     disconnect()
 
 @socketio.on('send_message')
-def handle_send_message(data):
-  #Сохраняем сообщения в бд
-  msg = Message(content=data['text'], dialog_id=data['dialog_id'],sender_id=data['user_id'])
+def handle_send_message(data):    
+  #Проверка на зашифрованность сообщений
+  if 'encrypted' in data:
+    #Сохраняем зашифрованные данные
+    encrypted_data = data['encrypted']
+    #Преобраховываем данные в формат JSON для сохранения в бд
+    content = json.dumps(encrypted_data)
+  else:
+    content = data['text']
+  
+  #Сохраненяем сообщения в бд
+  msg = Message(
+    content=content,
+    dialog_id=data['dialog_id'],
+    sender_id=data['user_id']
+  )
   db.session.add(msg)
   
+  #Достаем диалог по его id
   dialog = Dialog.query.get(data['dialog_id'])
-  #Если диалог существует, обновляем время 
+  #Изменяем время последнего сообщения 
   if dialog:
     dialog.updated_at = datetime.utcnow()
-  
+  #Сохраняем все сообщения в бд
   db.session.commit()
   
-
+  #Отправка сообщения всем участникам диалога
   room = f'dialog_{data["dialog_id"]}'
-  #Отправялем данные всем в комнате
   emit('new_message', {
-      'text': data['text'],
+      'encrypted': encrypted_data if 'encrypted' in data else None,
+      'text': data['text'] if 'text' in data else None,
       'user_id': data['user_id'],
       'username': current_user.username,
       'time': datetime.now().strftime('%H:%M')
   }, room=room)
+
+@app.route('/save_public_key', methods=['POST'])
+@login_required
+def save_public_key():
+  #Получаем json данные из тела запроса
+  data = request.get_json()
+  #Достаем публичный ключ
+  public_key = data.get('public_key')
+  
+  #Если пришел публичный ключ и у пользователя его еще нет - то сохраняем его в бд
+  if public_key and not current_user.public_key:
+    current_user.public_key = public_key
+    db.session.commit()
+    return jsonify({'status': 'ok'})
+  
+  return jsonify({'status': 'already_exists'})
+
+@app.route('/get_public_key/<int:user_id>')
+@login_required
+def get_public_key(user_id):
+  #Достаем пользователя по его id
+  user = User.query.get(user_id)
+  #Если пользователь существует и у него имеется публичный ключ
+  if user and user.public_key:
+    return jsonify({'public_key': user.public_key})
+  return jsonify({'error': 'No public key'}), 404

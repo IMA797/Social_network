@@ -3,12 +3,13 @@
 
 <a href="{{ url_for('search_users') }}">Найти пользователя</a>
 <hr> {% if dialog_data %} {% for item in dialog_data %}
-<div style="border:1px solid #ccc; margin:10px; padding:10px;">
+<div class="chat-item" data-other-user-id="{{ item.other_user.id }}" data-last-message="{{ item.last_message.content if item.last_message else '' }}" data-timestamp="{{ item.last_message.timestamp.strftime('%H:%M %d.%m.%Y') if item.last_message else '' }}">
+
     <a href="{{ url_for('chat', user_id=item.other_user.id) }}">
         <strong>{{ item.other_user.username }}</strong>
         <br> {% if item.last_message %}
         <small>{{ item.last_message.timestamp.strftime('%H:%M %d.%m.%Y') }}</small>
-        <p>{{ item.last_message.content[:50] }}{% if item.last_message.content|length > 50 %}...{% endif %}</p>
+        <p class="last-message-text"> Загрузка...</p>
         {% else %}
         <p><em>Нет сообщений</em></p>
         {% endif %}
@@ -16,4 +17,71 @@
 </div>
 {% endfor %} {% else %}
 <p>У вас пока нет диалогов</p>
-{% endif %} {% endblock %}
+{% endif %}
+
+<script src="{{ url_for('static', filename='js/crypto.js') }}"></script>
+<script>
+    //Расшифровка последних сообщений в списке чатов
+    async function decryptChatPreviews() {
+        //Достаем свой приватный ключ
+        const privateKeyBase64 = localStorage.getItem('privateKey');
+        if (!privateKeyBase64) return;
+
+        const myPrivate = await importPrivateKey(privateKeyBase64);
+        //Находим все диалоги на странице
+        const chatItems = document.querySelectorAll('.chat-item');
+
+        //Прозодимся по каждому диалогу
+        for (const item of chatItems) {
+            //Достаем id собеседника и щашифрованное сообщение
+            const otherUserId = item.getAttribute('data-other-user-id');
+            const encryptedMessage = item.getAttribute('data-last-message');
+
+            if (!encryptedMessage || encryptedMessage === '') continue;
+
+            //Проверяем, зашифровано ли сообщение 
+            let isEncrypted = false;
+            let encryptedData = null;
+            try {
+                encryptedData = JSON.parse(encryptedMessage);
+                if (encryptedData.ciphertext && encryptedData.iv) {
+                    isEncrypted = true;
+                }
+            } catch (e) {}
+
+            //Если сообщение зашифровано - то расшифровываем его
+            if (isEncrypted && encryptedData) {
+                try {
+                    //Получаем публичный ключ собеседника
+                    const response = await fetch('/get_public_key/' + otherUserId);
+                    const data = await response.json();
+
+                    if (data.public_key) {
+                        //Обрабатываем публичный ключ собеседника
+                        const peerPublic = await importPublicKey(data.public_key);
+                        //Создаем общий секрет
+                        const sharedAesKey = await deriveAesKey(myPrivate, peerPublic);
+                        //Расшифрованное сообщение
+                        const decrypted = await decryptMessage(sharedAesKey, encryptedData);
+                        //Берем последнее сообщение в диалоге
+                        const textP = item.querySelector('.last-message-text');
+                        //Берем первые 50 символов сообщения, а остальное меняем на многоточие
+                        if (textP) textP.innerText = decrypted.substring(0, 50) + (decrypted.length > 50 ? '...' : '');
+                    }
+                } catch (e) {
+                    console.error('Decrypt preview error:', e);
+                    const textP = item.querySelector('.last-message-text');
+                    if (textP) textP.innerText = 'Не удалось расшифровать';
+                }
+            } else {
+                //Не зашифрованное сообщение (старое)
+                const textP = item.querySelector('.last-message-text');
+                if (textP) textP.innerText = encryptedMessage.substring(0, 50) + (encryptedMessage.length > 50 ? '...' : '');
+            }
+        }
+    }
+
+    //Запускаем расшифровку после загрузки страницы
+    document.addEventListener('DOMContentLoaded', decryptChatPreviews);
+</script>
+{% endblock %}

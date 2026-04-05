@@ -1,84 +1,166 @@
 {% extends "base.html" %} {% block content %}
 <h1>Чат с {{ other_user.username }}</h1>
 
-<div id="messages" style="height:400px; overflow-y:scroll; border:1px solid #ccc; padding:10px;">
+<div id="messages" style="height:400px; overflow-y:auto; border:1px solid #ccc; padding:10px;">
     {% for msg in messages %}
-    <div><strong>{{ msg.sender.username }}:</strong> {{ msg.content }}</div>
+    <div class="message-item" data-encrypted="{{ msg.content }}" data-username="{{ msg.sender.username }}">
+        <strong>{{ msg.sender.username }}:</strong>
+        <span class="message-text">{{ msg.content }}</span>
+    </div>
     {% endfor %}
 </div>
 
-<input type="text" id="msg" style="width:80%; padding:5px;">
+<input id="msg" type="text" style="width:80%; padding:5px; margin-top:10px;" />
 <button id="btn" style="padding:5px 10px;">Отправить</button>
+
+<div id="chat-data" data-dialog-id="{{ dialog.id }}" data-user-id="{{ current_user.id }}" data-other-user-id="{{ other_user.id }}" style="display:none;"></div>
 
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
-    //Получение id диалога и id пользователя
-    const dialogId = Number("{{ dialog.id }}");
-    const currentUserId = Number("{{ current_user.id }}");
+    //Находим блок div и сохраняем его в переменную data
+    const chatData = document.getElementById('chat-data');
+    //Достаем id диалога
+    //pardeInt - превращает строку в число
+    const dialogId = parseInt(chatData.getAttribute('data-dialog-id'));
+    //Достаем id текущего пользователя и его собеседника
+    const currentUserId = parseInt(chatData.getAttribute('data-user-id'));
+    const otherUserId = parseInt(chatData.getAttribute('data-other-user-id'));
 
-    console.log("dialogId:", dialogId);
-    console.log("currentUserId:", currentUserId);
+    let sharedAesKey = null;
 
-    //Подключение к WebSocket 
+    //Прокрутка страницы вниз, чтоб новые сообщения были видны и пользователь сам не прокручивал страницу
+    function scrollToBottom() {
+        const div = document.getElementById('messages');
+        //Устанавливаем значение текущей прокрутки на значение высоты, сколько занимают все сообщения
+        div.scrollTop = div.scrollHeight;
+    }
+
+    //Функция расшифровки сообщения
+    async function decryptAllMessages() {
+
+        if (!sharedAesKey) return;
+        //Находим все блоки с сообщенинями 
+        const items = document.querySelectorAll('.message-item');
+        for (const item of items) {
+            //Достаем зашифрованные сообщения
+            const encryptedStr = item.getAttribute('data-encrypted');
+            if (!encryptedStr) continue;
+            try {
+                //Преобразование json в объект
+                const encrypted = JSON.parse(encryptedStr);
+                if (encrypted.ciphertext && encrypted.iv) {
+                    //decrypted хранить расшифрованное сообщение
+                    const decrypted = await decryptMessage(sharedAesKey, encrypted);
+                    const span = item.querySelector('.message-text');
+                    //Вставка зашифрованного сообщения 
+                    if (span) span.innerText = decrypted;
+                    item.removeAttribute('data-encrypted');
+                }
+            } catch (e) {}
+        }
+        scrollToBottom();
+    }
+    //Вычисление общего секрета
+    async function initEncryption() {
+        //Запрос публичного ключа собеседника
+        const response = await fetch('/get_public_key/' + otherUserId);
+        const data = await response.json();
+        if (data.public_key) {
+            //Берем свой приватный ключ
+            const privateKeyBase64 = localStorage.getItem('privateKey');
+            if (!privateKeyBase64) return;
+            //Вызов функции обработки ключей
+            const myPrivate = await importPrivateKey(privateKeyBase64);
+            const peerPublic = await importPublicKey(data.public_key);
+            //Вычисление общего ключа по Диффи-Хеллману
+            sharedAesKey = await deriveAesKey(myPrivate, peerPublic);
+            console.log('Encryption ready');
+            await decryptAllMessages();
+        } else {
+            console.log('No public key for user', otherUserId);
+        }
+    }
+
+
     const socket = io();
 
     socket.on('connect', function() {
-        console.log("Socket connected");
+        console.log('Socket connected');
         socket.emit('join', {
             dialog_id: dialogId
         });
+        initEncryption();
     });
 
-    socket.on('new_message', function(data) {
-        console.log("New message:", data);
-        //Хранилище всех сообщений 
-        const messagesDiv = document.getElementById('messages');
-        const newMsg = document.createElement('div');
-        //escapeHtml(data.username) - защита имени пользователя
-        newMsg.innerHTML = '<strong>' + escapeHtml(data.username) + ':</strong> ' + escapeHtml(data.text);
-        //Добавление нового сообщения в хранилище
-        messagesDiv.appendChild(newMsg);
-        //Прокрутка чата вниз, чтоб было видно последнее сообщение
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    //Получаем новое сообщение, расшифровываем его и отправляем на страницу
+    socket.on('new_message', async function(data) {
+        //Находим контейнер, куда будут отправляться сообщения
+        const container = document.getElementById('messages');
+        const div = document.createElement('div');
+        //Добавляем класс для стилей и для JS
+        div.className = 'message-item';
+        let messageText = '';
+        //Имя отправителя
+        let username = data.username || 'Unknown';
+        //Если пришло зашифрованное сообщение и имеется ключ
+        if (data.encrypted && sharedAesKey) {
+            try {
+                //Расшифрованное сообщение
+                messageText = await decryptMessage(sharedAesKey, data.encrypted);
+            } catch (e) {
+                console.error('Decrypt error:', e);
+                messageText = '[Ошибка расшифровки]';
+            }
+        } else if (data.text) {
+            messageText = data.text;
+        }
+        div.innerHTML = '<strong>' + escapeHtml(username) + ':</strong> <span>' + escapeHtml(messageText) + '</span>';
+        container.appendChild(div);
+        scrollToBottom();
     });
-    //Отправка сообщений на сервер
-    function sendMessage() {
-        //Получаем поле ввода и достаем оттуда сообщение
+
+    //Отправка зашифрованного сообщения (если есть ключ) на сервер
+    async function sendMessage() {
+        //Находим поле ввода
         const input = document.getElementById('msg');
+        //Введенное сообщение пользователя
+        //.tim удаляет лишние пробелы в начале и в конце строки
         const text = input.value.trim();
-        //Сравнение без приведения типов, == - сравнение с приведением типов
         if (text === '') return;
-
-        console.log("Sending:", text);
-        //Отправка сообщений на сервер
-        socket.emit('send_message', {
-            text: text,
-            dialog_id: dialogId,
-            user_id: currentUserId
-        });
-
+        if (sharedAesKey) {
+            const encrypted = await encryptMessage(sharedAesKey, text);
+            socket.emit('send_message', {
+                encrypted: encrypted,
+                dialog_id: dialogId,
+                user_id: currentUserId
+            });
+        } else {
+            socket.emit('send_message', {
+                text: text,
+                dialog_id: dialogId,
+                user_id: currentUserId
+            });
+        }
         input.value = '';
     }
-    //Обработка нажатия кнопки
-    document.getElementById('btn').onclick = sendMessage;
-    //Обработка нажатия клавиш в поле ввода
-    //function(e) - Функция, которая срабатывает при нажатии любой клавиш
-    document.getElementById('msg').onkeypress = function(e) {
-        if (e.key === 'Enter') {
-            sendMessage();
-        }
-    };
-    //Защита, чтоб не вставить вредоносный код в сообщение
+
+    //Защита от xss-атак
     function escapeHtml(text) {
-        //Временное хранилище текста
+        if (!text) return '';
+        //Создаем div тег в памяти
         const div = document.createElement('div');
-        //Вставка происходит как обычный текст
+        //Добавляем внутрь тега div текст как обычный текст
         div.appendChild(document.createTextNode(text));
         return div.innerHTML;
     }
-    //Находим хранилище сообщений и прокручиваем чат вниз
-    //Нужно когда есть старые сообщения но нет новых 
-    const messagesDiv = document.getElementById('messages');
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+    //Обработка кнопки "Отправить"
+    document.getElementById('btn').onclick = sendMessage;
+    //Обработка отправки сообщения по нажатию кнопки "Enter"
+    document.getElementById('msg').onkeypress = function(e) {
+        if (e.key === 'Enter') sendMessage();
+    };
+
+    window.onload = scrollToBottom;
 </script>
 {% endblock %}
