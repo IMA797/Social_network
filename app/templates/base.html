@@ -10,7 +10,6 @@
 
 <body>
     <div class="container">
-        <!-- НАВИГАЦИЯ (ШАПКА) -->
         <div class="navbar">
             <a href="{{ url_for('index') }}" class="brand">Social Network</a>
             <a href="{{ url_for('chats') }}">Чаты</a> {% if current_user.is_anonymous %}
@@ -19,10 +18,10 @@
         </div>
 
         <div class="content">
-            {% with messages = get_flashed_messages() %} {% if messages %}
+            {% with messages = get_flashed_messages(with_categories=true) %} {% if messages %}
             <ul class="flash-messages">
-                {% for message in messages %}
-                <li>{{ message }}</li>
+                {% for category, message in messages %}
+                <li class="{{ category }}">{{ message }}</li>
                 {% endfor %}
             </ul>
             {% endif %} {% endwith %} {% block content %}{% endblock %}

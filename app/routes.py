@@ -1,4 +1,4 @@
-from flask import render_template, flash, redirect, url_for, request, jsonify
+from flask import render_template, flash, redirect, session, url_for, request, jsonify
 from app import app, socketio
 from app.forms import LoginForm, RegistrationForm
 from flask_login import current_user, login_user, logout_user, login_required
@@ -6,9 +6,11 @@ import sqlalchemy as sa
 from app import db
 from app.models import User, Dialog, Message
 from urllib.parse import urlsplit
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask_socketio import emit, join_room, disconnect
 import json
+from app.email_utils import generate_code, send_confirmation_email
+
 
 @app.route('/')
 @app.route('/index')
@@ -22,7 +24,7 @@ def update_profile():
     about_me = request.form.get('about_me', '').strip()
     current_user.about_me = about_me
     db.session.commit()
-    flash('Профиль обновлён!')
+    flash('Профиль обновлён!', 'success')
     return redirect(url_for('index'))
 
 #Функция просмотра (принимает запросы GET и POST)
@@ -39,7 +41,7 @@ def login():
       sa.select(User).where(User.username == form.username.data))
     if user is None or not user.check_password(form.password.data):
       #Вывод ошибки пользователю
-      flash('Invalid username or password')
+      flash('Invalid username or password', 'error')
       #Переход на другую страницу 
       return redirect(url_for('login'))
     login_user(user, remember=form.remember_me.data)
@@ -57,17 +59,80 @@ def logout():
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    if current_user.is_authenticated:
-        return redirect(url_for('index'))
-    form = RegistrationForm()
-    if form.validate_on_submit():
-        user = User(username=form.username.data, email=form.email.data)
-        user.set_password(form.password.data)
-        db.session.add(user)
-        db.session.commit()
-        flash('Congratulations, you are now a registered user!')
-        return redirect(url_for('login'))
-    return render_template('register.html', title='Register', form=form)
+  if current_user.is_authenticated:
+    return redirect(url_for('index'))
+  
+  form = RegistrationForm()
+  
+  if form.validate_on_submit():
+    # Проверяем, не занят ли email
+    existing_user = User.query.filter_by(email=form.email.data).first()
+    if existing_user:
+      flash('Email уже зарегистрирован', 'error')
+      return redirect(url_for('register'))
+    
+    # Проверяем, не занято ли имя
+    existing_username = User.query.filter_by(username=form.username.data).first()
+    if existing_username:
+      flash('Имя пользователя уже занято', 'error'
+            
+            )
+      return redirect(url_for('register'))
+    
+    session['pending_username'] = form.username.data
+    session['pending_email'] = form.email.data
+    session['pending_password'] = form.password.data
+    
+    # Генерируем код
+    from app.email_utils import generate_code, send_confirmation_email
+    code = generate_code()
+    session['pending_code'] = code
+    session['pending_code_expires'] = (datetime.utcnow() + timedelta(minutes=10)).timestamp()
+    
+    # Отправляем код на email
+    if send_confirmation_email(form.email.data, code):
+      flash('Код подтверждения отправлен на ваш email', 'info')
+      return redirect(url_for('confirm_registration'))
+    else:
+      flash('Ошибка отправки письма. Попробуйте позже.', 'error')
+  
+  return render_template('register.html', title='Register', form=form) 
+
+@app.route('/confirm_registration', methods=['GET', 'POST'])
+def confirm_registration():
+  # Проверяем, есть ли данные в сессии
+  if not session.get('pending_username'):
+      flash('Сессия истекла. Зарегистрируйтесь заново.')
+      return redirect(url_for('register'))
+  
+  if request.method == 'POST':
+    user_code = request.form.get('code')
+    expected_code = session.get('pending_code')
+    expires = session.get('pending_code_expires')
+    
+    # Проверяем код
+    if user_code == expected_code and datetime.utcnow().timestamp() < expires:
+      user = User(
+          username=session['pending_username'],
+          email=session['pending_email']
+      )
+      user.set_password(session['pending_password'])
+      db.session.add(user)
+      db.session.commit()
+      
+      # Очищаем сессию
+      session.pop('pending_username', None)
+      session.pop('pending_email', None)
+      session.pop('pending_password', None)
+      session.pop('pending_code', None)
+      session.pop('pending_code_expires', None)
+      
+      flash('Регистрация завершена! Теперь вы можете войти.', 'success')
+      return redirect(url_for('login'))
+    else:
+      flash('Неверный или истёкший код', 'error')
+  
+  return render_template('confirm_registration.html', email=session.get('pending_email'))
 
 def get_or_create_dialog(user1_id, user2_id):
   small_id = min(user1_id, user2_id)
@@ -119,7 +184,7 @@ def chats():
 def chat(user_id):
 
   if user_id == current_user.id:
-    flash('Нельзя начать чат с самим собой')
+    flash('Нельзя начать чат с самим собой', 'error')
     return redirect(url_for('chats'))
 
   #Получаем или создаем диалог
@@ -158,6 +223,72 @@ def search_users():
     if search:
       users = User.query.filter(User.username.contains(search), User.id != current_user.id).limit(10).all()
   return render_template('search_users.html', users=users)
+
+@app.route('/confirm_email', methods=['GET', 'POST'])
+def confirm_email():
+  # Получаем ID пользователя из сессии
+  user_id = session.get('pending_user_id')
+  if not user_id:
+      flash('Сессия истекла. Зарегистрируйтесь заново.', 'error')
+      return redirect(url_for('register'))
+  
+  user = User.query.get(user_id)
+  if not user:
+      session.pop('pending_user_id', None)
+      flash('Пользователь не найден', 'error')
+      return redirect(url_for('register'))
+  
+  # Если уже подтверждён
+  if user.email_confirmed:
+      session.pop('pending_user_id', None)
+      flash('Email уже подтверждён', 'success')
+      return redirect(url_for('login'))
+  
+  # Проверяем, не истёк ли код
+  if user.code_expires is None or datetime.utcnow() > user.code_expires:
+      flash('Код истёк. Запросите новый.', 'error')
+      return redirect(url_for('resend_code'))
+  
+  if request.method == 'POST':
+      code = request.form.get('code')
+      
+      if code == user.confirmation_code:
+          # Подтверждаем email
+          user.email_confirmed = True
+          user.confirmation_code = None
+          user.code_expires = None
+          db.session.commit()
+          
+          session.pop('pending_user_id', None)
+          flash('Email подтверждён! Теперь вы можете войти.', 'success')
+          return redirect(url_for('login'))
+      else:
+          flash('Неверный код', 'error')
+  
+  return render_template('confirm_email.html', email=user.email)
+
+@app.route('/resend_code')
+def resend_code():
+  user_id = session.get('pending_user_id')
+  if not user_id:
+      return redirect(url_for('register'))
+  
+  user = User.query.get(user_id)
+  if not user or user.email_confirmed:
+      return redirect(url_for('register'))
+  
+  # Генерируем новый код
+  new_code = generate_code()
+  user.confirmation_code = new_code
+  user.code_expires = datetime.utcnow() + timedelta(minutes=10)
+  db.session.commit()
+  
+  if send_confirmation_email(user.email, new_code):
+      flash('Новый код отправлен', 'info')
+  else:
+      flash('Ошибка отправки', 'error')
+  
+  return redirect(url_for('confirm_email'))
 
 @socketio.on('join')
 def handle_join(data):

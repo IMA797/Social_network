@@ -15,6 +15,10 @@ class User(UserMixin, db.Model):
   public_key: so.Mapped[Optional[str]] = so.mapped_column(sa.Text, nullable=True)
   about_me: so.Mapped[Optional[str]] = so.mapped_column(sa.String(200), nullable=True)
 
+  email_confirmed = db.Column(db.Boolean, default=False)   #подтверждён ли email (по умолчанию НЕТ)
+  confirmation_code = db.Column(db.String(6), nullable=True)  #6-значный код
+  code_expires = db.Column(db.DateTime, nullable=True)        #когда код истекает
+  
   def __repr__(self):
     return '<User {}>'.format(self.username)
   

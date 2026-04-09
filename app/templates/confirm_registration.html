@@ -1,0 +1,11 @@
+{% extends "base.html" %} {% block content %}
+<div class="auth-card">
+    <h1>Подтверждение регистрации</h1>
+    <p class="auth-subtitle">Код отправлен на <strong>{{ email }}</strong></p>
+
+    <form method="POST" class="auth-form">
+        <input type="text" name="code" placeholder="Введите 6-значный код" maxlength="6" required>
+        <button type="submit">Подтвердить и завершить регистрацию</button>
+    </form>
+</div>
+{% endblock %}

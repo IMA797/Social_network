@@ -333,17 +333,37 @@ body {
     font-size: 0.9rem;
 }
 
+
+/* Уведомления (flash-messages) */
+
 .flash-messages {
     margin-bottom: 20px;
+    list-style: none;
 }
 
-.flash-messages li {
+
+/* Ошибки — красные */
+
+.flash-messages li.error {
     background-color: #ffe3e3;
     color: #c00;
     padding: 10px;
     border-radius: 8px;
-    list-style: none;
     margin-bottom: 8px;
+    border-left: 4px solid #c00;
+}
+
+
+/* Успех/информация — жёлтые/оранжевые */
+
+.flash-messages li.success,
+.flash-messages li.info {
+    background-color: #fff3cd;
+    color: #856404;
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    border-left: 4px solid #ffc107;
 }
 
 
