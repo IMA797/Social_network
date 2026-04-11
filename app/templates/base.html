@@ -12,6 +12,7 @@
     <div class="container">
         <div class="navbar">
             <a href="{{ url_for('index') }}" class="brand">Social Network</a>
+            <a href="{{ url_for('feed') }}">Посты</a>
             <a href="{{ url_for('chats') }}">Чаты</a> {% if current_user.is_anonymous %}
             <a href="{{ url_for('login') }}">Вход</a> {% else %}
             <a href="{{ url_for('logout') }}">Выход</a> {% endif %}

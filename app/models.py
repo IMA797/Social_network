@@ -19,6 +19,9 @@ class User(UserMixin, db.Model):
   confirmation_code = db.Column(db.String(6), nullable=True)  #6-значный код
   code_expires = db.Column(db.DateTime, nullable=True)        #когда код истекает
   
+  posts: so.WriteOnlyMapped['Post'] = so.relationship(back_populates='author')
+  likes: so.WriteOnlyMapped['Like'] = so.relationship(back_populates='user')
+  
   def __repr__(self):
     return '<User {}>'.format(self.username)
   
@@ -90,3 +93,28 @@ class Message(db.Model):
   dialog: so.Mapped[Dialog] = so.relationship(
       back_populates='messages'
   )
+
+class Post(db.Model):
+  id: so.Mapped[int] = so.mapped_column(primary_key=True)
+  body: so.Mapped[str] = so.mapped_column(sa.String(280), nullable=False)  
+  timestamp: so.Mapped[datetime] = so.mapped_column(index=True, default=datetime.utcnow)
+  user_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey('user.id'), nullable=False)
+  
+  # Связи
+  author: so.Mapped[User] = so.relationship(back_populates='posts')
+  likes: so.Mapped[list['Like']] = so.relationship(back_populates='post', cascade='all, delete-orphan')
+  
+  def __repr__(self):
+    return f'<Post {self.id} by {self.author.username}>'
+
+class Like(db.Model):
+  id: so.Mapped[int] = so.mapped_column(primary_key=True)
+  user_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey('user.id'), nullable=False)
+  post_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey('post.id'), nullable=False)
+  timestamp: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
+  
+  # Связи
+  user: so.Mapped[User] = so.relationship(back_populates='likes')
+  post: so.Mapped[Post] = so.relationship(back_populates='likes')
+  
+  __table_args__ = (sa.UniqueConstraint('user_id', 'post_id', name='unique_like'),)

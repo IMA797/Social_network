@@ -523,3 +523,23 @@ body {
     color: var(--text-light);
     padding: 40px;
 }
+
+
+/* Кнопка удаления поста */
+
+.delete-btn {
+    background: none;
+    border: none;
+    font-size: 0.8rem;
+    cursor: pointer;
+    color: #999;
+    padding: 4px 10px;
+    border-radius: 20px;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.delete-btn:hover {
+    color: #e74c3c;
+    background-color: rgba(231, 76, 60, 0.1);
+}

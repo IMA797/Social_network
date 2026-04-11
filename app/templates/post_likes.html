@@ -1,0 +1,28 @@
+{% extends "base.html" %} {% block content %}
+<div style="max-width: 600px; margin: 0 auto;">
+    <h1 style="margin-bottom: 20px;">Кто лайкнул</h1>
+    <div class="chat-list">
+        {% for user in users %}
+        <div class="chat-item">
+            <a href="{{ url_for('chat', user_id=user.id) }}" style="display: flex; align-items: center; gap: 15px;">
+                <div class="avatar" style="width: 48px; height: 48px; font-size: 1.2rem;">
+                    {{ user.username[0].upper() }}
+                </div>
+                <div>
+                    <div style="font-weight: 600;">{{ user.username }}</div>
+                    <div style="font-size: 0.8rem; color: var(--text-light);">@{{ user.username }}</div>
+                </div>
+            </a>
+        </div>
+        {% else %}
+        <div class="empty-chats">
+            <p>Пока никто не лайкнул этот пост</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div style="margin-top: 20px;">
+        <a href="{{ url_for('feed') }}" class="send-btn" style="display: inline-block;">Назад к ленте</a>
+    </div>
+</div>
+{% endblock %}

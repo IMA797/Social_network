@@ -4,7 +4,7 @@ from app.forms import LoginForm, RegistrationForm
 from flask_login import current_user, login_user, logout_user, login_required
 import sqlalchemy as sa
 from app import db
-from app.models import User, Dialog, Message
+from app.models import User, Dialog, Message, Post, Like
 from urllib.parse import urlsplit
 from datetime import datetime, timedelta
 from flask_socketio import emit, join_room, disconnect
@@ -366,3 +366,93 @@ def get_public_key(user_id):
   if user and user.public_key:
     return jsonify({'public_key': user.public_key})
   return jsonify({'error': 'No public key'}), 404
+
+@app.route('/feed')
+@login_required
+def feed():
+  page = request.args.get('page', 1, type=int)
+  posts = db.session.scalars(
+      Post.query.order_by(Post.timestamp.desc())
+  ).all()
+  return render_template('feed.html', title='Feed', posts=posts, timedelta=timedelta)
+
+@app.route('/create_post', methods=['GET', 'POST'])
+@login_required
+def create_post():
+   
+  if request.method == 'POST':
+    body = request.form.get('body', '').strip()
+    if body:
+      post = Post(body=body, author=current_user)
+      db.session.add(post)
+      db.session.commit()
+      flash('Пост опубликован!', 'success')
+      return redirect(url_for('feed'))
+    else:
+      flash('Пост не может быть пустым', 'error')
+  return render_template('create_post.html', title='Новый пост')
+
+@app.route('/like/<int:post_id>')
+@login_required
+def like(post_id):
+   
+  post = db.session.get(Post, post_id)
+  if not post:
+    flash('Пост не найден', 'error')
+    return redirect(url_for('feed'))
+  
+  # Проверяем, есть ли уже лайк от этого пользователя
+  existing_like = Like.query.filter_by(user_id=current_user.id, post_id=post_id).first()
+  
+  if existing_like:
+    # Убираем лайк
+    db.session.delete(existing_like)
+    flash('Лайк убран', 'info')
+  else:
+    # Ставим лайк
+    like = Like(user_id=current_user.id, post_id=post_id)
+    db.session.add(like)
+    flash('Лайк поставлен!', 'success')
+  
+  db.session.commit()
+  return redirect(url_for('feed'))
+
+@app.route('/post/<int:post_id>/likes')
+@login_required
+def post_likes(post_id):
+  post = db.session.get(Post, post_id)
+  if not post:
+    flash('Пост не найден', 'error')
+    return redirect(url_for('feed'))
+  
+  if post.author.id != current_user.id:
+    flash('Вы не можете видеть список лайкнувших этот пост', 'error')
+    return redirect(url_for('feed'))
+  
+  # Получаем всех пользователей, которые лайкнули пост
+  likes = Like.query.filter_by(post_id=post_id).all()
+  users = [like.user for like in likes]
+  
+  return render_template('post_likes.html', post=post, users=users)
+
+@app.route('/delete_post/<int:post_id>', methods=['POST'])
+@login_required
+def delete_post(post_id):
+    post = db.session.get(Post, post_id)
+    
+    # Проверка: существует ли пост
+    if not post:
+        return jsonify({'status': 'error', 'message': 'Пост не найден'}), 404
+    
+    # Проверка: только автор может удалить
+    if post.author.id != current_user.id:
+        return jsonify({'status': 'error', 'message': 'Недостаточно прав'}), 403
+    
+    # Удаляем все лайки этого поста
+    Like.query.filter_by(post_id=post_id).delete()
+    
+    # Удаляем сам пост
+    db.session.delete(post)
+    db.session.commit()
+    
+    return jsonify({'status': 'ok'})

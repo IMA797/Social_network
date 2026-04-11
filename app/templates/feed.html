@@ -1,0 +1,70 @@
+{% extends "base.html" %} {% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <h1>Лента</h1>
+    <a href="{{ url_for('create_post') }}" class="send-btn">Новый пост</a>
+</div>
+
+{% if posts %} {% for post in posts %}
+<div class="chat-item" style="margin-bottom: 16px;" id="post-{{ post.id }}">
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+        <div class="avatar" style="width: 40px; height: 40px; font-size: 1rem;">
+            {{ post.author.username[0].upper() }}
+        </div>
+        <div style="flex: 1;">
+            <strong>{{ post.author.username }}</strong>
+            <div style="font-size: 0.75rem; color: var(--text-light);">
+                {{ (post.timestamp + timedelta(hours=3)).strftime('%d.%m.%Y %H:%M') if post.timestamp else 'Только что' }}
+            </div>
+        </div>
+        {% if current_user.id == post.author.id %}
+        <button onclick="deletePost({{ post.id }})" class="delete-btn" title="Удалить пост">
+    Удалить
+</button> {% endif %}
+    </div>
+
+    <p style="margin: 12px 0; font-size: 1rem; line-height: 1.4;">{{ post.body }}</p>
+
+    <div style="display: flex; gap: 16px; margin-top: 8px;">
+        <a href="{{ url_for('like', post_id=post.id) }}" style="text-decoration: none; color: var(--text-light);">
+                {% if current_user in post.likes|map(attribute='user') %}
+                    ❤️ {{ post.likes|length }}
+                {% else %}
+                    🤍 {{ post.likes|length }}
+                {% endif %}
+            </a> {% if current_user.id == post.author.id %}
+        <a href="{{ url_for('post_likes', post_id=post.id) }}" style="text-decoration: none; color: var(--text-light);">
+                    👥 {{ post.likes|length }} отметок "Нравится"
+                </a> {% endif %}
+    </div>
+</div>
+{% endfor %} {% else %}
+<div class="empty-chats">
+    <p>Нет постов. <a href="{{ url_for('create_post') }}">Создайте первый пост!</a></p>
+</div>
+{% endif %}
+
+<script>
+    function deletePost(postId) {
+        if (confirm('Вы уверены, что хотите удалить этот пост?')) {
+            fetch(`/delete_post/${postId}`, {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'ok') {
+                        const postElement = document.getElementById(`post-${postId}`);
+                        if (postElement) {
+                            postElement.remove();
+                        }
+                    } else {
+                        alert('Ошибка при удалении: ' + (data.message || 'Неизвестная ошибка'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Ошибка при удалении поста');
+                });
+        }
+    }
+</script>
+{% endblock %}
