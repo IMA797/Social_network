@@ -112,3 +112,32 @@ async function decryptMessage(aesKey, encryptedData) {
     //Возвращаем числа из массива в текст
     return new TextDecoder().decode(decrypted);
 }
+
+//Шифрование файла (бинарные данные)
+async function encryptFile(aesKey, fileData) {
+    //Генерация iv
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    //Шифрование файла, получаем зашифрованный массив байт
+    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv },
+        aesKey,
+        fileData
+    );
+    //Возвращаем зашифрованный файл в Base64 и его iv
+    return {
+        data: bufferToBase64(encrypted),
+        iv: bufferToBase64(iv)
+    };
+}
+
+// Расшифровка файла
+async function decryptFile(aesKey, encryptedData, iv) {
+    //Преобразуем текст из Base64 обратно в байты и iv в байты
+    const ciphertext = base64ToBuffer(encryptedData);
+    const ivBuffer = base64ToBuffer(iv);
+    //Расшифровка файла, получаем исходные бинарные данные
+    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: ivBuffer },
+        aesKey,
+        ciphertext
+    );
+    return decrypted;
+}

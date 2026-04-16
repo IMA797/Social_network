@@ -1,14 +1,16 @@
-from flask import render_template, flash, redirect, session, url_for, request, jsonify
+from flask import render_template, flash, redirect, session, url_for, request, jsonify, current_app, send_file
 from app import app, socketio
 from app.forms import LoginForm, RegistrationForm
 from flask_login import current_user, login_user, logout_user, login_required
 import sqlalchemy as sa
 from app import db
 from app.models import User, Dialog, Message, Post, Like
+from app.crypto_utils import encrypt_image, decrypt_image
 from urllib.parse import urlsplit
 from datetime import datetime, timedelta
 from flask_socketio import emit, join_room, disconnect
 import json
+import io
 from app.email_utils import generate_code, send_confirmation_email
 
 
@@ -438,21 +440,117 @@ def post_likes(post_id):
 @app.route('/delete_post/<int:post_id>', methods=['POST'])
 @login_required
 def delete_post(post_id):
-    post = db.session.get(Post, post_id)
-    
-    # Проверка: существует ли пост
-    if not post:
-        return jsonify({'status': 'error', 'message': 'Пост не найден'}), 404
-    
-    # Проверка: только автор может удалить
-    if post.author.id != current_user.id:
-        return jsonify({'status': 'error', 'message': 'Недостаточно прав'}), 403
-    
-    # Удаляем все лайки этого поста
-    Like.query.filter_by(post_id=post_id).delete()
-    
-    # Удаляем сам пост
-    db.session.delete(post)
-    db.session.commit()
-    
-    return jsonify({'status': 'ok'})
+  post = db.session.get(Post, post_id)
+  
+  # Проверка: существует ли пост
+  if not post:
+    return jsonify({'status': 'error', 'message': 'Пост не найден'}), 404
+  
+  # Проверка: только автор может удалить
+  if post.author.id != current_user.id:
+    return jsonify({'status': 'error', 'message': 'Недостаточно прав'}), 403
+  
+  # Удаляем все лайки этого поста
+  Like.query.filter_by(post_id=post_id).delete()
+  
+  # Удаляем сам пост
+  db.session.delete(post)
+  db.session.commit()
+  
+  return jsonify({'status': 'ok'})
+
+
+@app.route('/chat/<int:dialog_id>/send_image', methods=['POST'])
+@login_required
+def send_image(dialog_id):
+  
+  # Проверяем доступ к диалогу
+  dialog = Dialog.query.get_or_404(dialog_id)
+  if current_user.id not in (dialog.user1_id, dialog.user2_id):
+    return jsonify({'error': 'Access denied'}), 403
+  
+  # Проверяем наличие файла
+  if 'image' not in request.files:
+    return jsonify({'error': 'No image'}), 400
+  
+  file = request.files['image']
+  if file.filename == '':
+    return jsonify({'error': 'Empty filename'}), 400
+  
+  # Проверяем тип файла
+  allowed_mimes = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
+  if file.content_type not in allowed_mimes:
+    return jsonify({'error': f'Unsupported file type: {file.content_type}'}), 400
+  
+  # Читаем и шифруем
+  image_bytes = file.read()
+  mime_type = file.content_type
+  
+  # Проверяем размер (макс 10 МБ)
+  if len(image_bytes) > 10 * 1024 * 1024:
+    return jsonify({'error': 'File too large (max 10 MB)'}), 400
+  
+  key = current_app.config.get('MESSAGE_ENCRYPTION_KEY')
+  if not key:
+    # Если ключа нет - используем временный 
+    key = b'temp-32-byte-key-for-dev-only!!'
+  elif isinstance(key, str):
+    key = key.encode('utf-8')
+  key = key.ljust(32, b'\0')[:32]
+  
+  encrypted_b64, iv_b64 = encrypt_image(image_bytes, key)
+  
+  # Сохраняем в БД
+  message = Message(
+      dialog_id=dialog_id,
+      sender_id=current_user.id,
+      content="[ФОТО]",  
+      image_data=encrypted_b64,
+      image_iv=iv_b64,
+      image_mime=mime_type
+  )
+  
+  db.session.add(message)
+  dialog.updated_at = datetime.utcnow()
+  db.session.commit()
+  
+  # Отправляем всем в комнате диалога
+  socketio.emit('new_message', {
+      'is_image': True,
+      'message_id': message.id,
+      'user_id': current_user.id,
+      'username': current_user.username,
+      'dialog_id': dialog_id,
+      'timestamp': message.timestamp.isoformat()
+  }, room=f'dialog_{dialog_id}')
+  
+  return jsonify({
+      'status': 'ok', 
+      'message_id': message.id,
+      'timestamp': message.timestamp.isoformat()
+  })
+
+@app.route('/message/<int:message_id>/image')
+@login_required
+def get_message_image(message_id):    
+  message = Message.query.get_or_404(message_id)
+  
+  # Проверяем доступ
+  if current_user.id not in (message.dialog.user1_id, message.dialog.user2_id):
+    return jsonify({'error': 'Access denied'}), 403
+  
+  if not message.is_image:
+    return jsonify({'error': 'Not an image'}), 400
+  
+  # Расшифровываем
+  key = current_app.config.get('MESSAGE_ENCRYPTION_KEY')
+  if isinstance(key, str):
+    key = key.encode('utf-8')
+  key = key.ljust(32, b'\0')[:32]
+  
+  image_bytes = decrypt_image(message.image_data, message.image_iv, key)
+  
+  return send_file(
+      io.BytesIO(image_bytes),
+      mimetype=message.image_mime
+  )

@@ -72,28 +72,26 @@ class Dialog(db.Model):
   __table_args__ = (sa.UniqueConstraint('user1_id', 'user2_id', name='unique_dialog'),)
 
 class Message(db.Model):
-  id: so.Mapped[int] = so.mapped_column(primary_key=True)
-  content: so.Mapped[str] = so.mapped_column(sa.Text, nullable=False)
-  timestamp: so.Mapped[datetime] = so.mapped_column(index=True, default=datetime.utcnow)
-  dialog_id: so.Mapped[int] = so.mapped_column(
-    sa.ForeignKey('dialog.id'), 
-    nullable=False
-  )
-  sender_id: so.Mapped[int] = so.mapped_column(
-    sa.ForeignKey('user.id'), 
-    nullable=False
-  )
-  is_read: so.Mapped[bool] = so.mapped_column(default=False)
-  
-  # Связи
-  sender: so.Mapped[User] = so.relationship(
-    foreign_keys=[sender_id],
-    back_populates='sent_messages'
-  )
-  dialog: so.Mapped[Dialog] = so.relationship(
-      back_populates='messages'
-  )
-
+    id: so.Mapped[int] = so.mapped_column(primary_key=True)
+    content: so.Mapped[Optional[str]] = so.mapped_column(sa.Text, nullable=True)  
+    timestamp: so.Mapped[datetime] = so.mapped_column(index=True, default=datetime.utcnow)
+    dialog_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey('dialog.id'), nullable=False)
+    sender_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey('user.id'), nullable=False)
+    is_read: so.Mapped[bool] = so.mapped_column(default=False)
+    
+    #Поля для фото: зашифрованное изображение, его iv, mime-тип изображения (при расшифровке надо знать в каком формате он находится)
+    image_data: so.Mapped[Optional[str]] = so.mapped_column(sa.Text, nullable=True)
+    image_iv: so.Mapped[Optional[str]] = so.mapped_column(sa.String(24), nullable=True)
+    image_mime: so.Mapped[Optional[str]] = so.mapped_column(sa.String(100), nullable=True)
+    
+    # Связи
+    sender: so.Mapped[User] = so.relationship(foreign_keys=[sender_id], back_populates='sent_messages')
+    dialog: so.Mapped[Dialog] = so.relationship(back_populates='messages')
+    
+    @property
+    def is_image(self):
+        return self.image_data is not None
+    
 class Post(db.Model):
   id: so.Mapped[int] = so.mapped_column(primary_key=True)
   body: so.Mapped[str] = so.mapped_column(sa.String(280), nullable=False)  
